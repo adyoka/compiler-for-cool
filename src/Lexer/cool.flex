@@ -52,7 +52,6 @@ int string_const_len = 0;
 %}
 
 
-/* Conditions declarations */
 %x COMMENT
 %x NESTED_COMMENT
 %x STRING ESCAPE
@@ -75,7 +74,6 @@ SINGLE_LINE_COMMENT       "--"
 NESTED_COMMENT_START      \(\*
 NESTED_COMMENT_END        \*\)
 
-/* Keyword definitions*/
 CLASS       (?i:class)
 ELSE        (?i:else)
 FI          (?i:fi)
@@ -141,6 +139,7 @@ OBJECTID            ("self"|{LETTER}({LETTER}|{DIGIT}|"_")*)
  /*
   *  The multiple-character operators
   */
+  
 {DARROW}		return (DARROW); 
 {LE}        return (LE);  
 {ASSIGN}    return (ASSIGN);
@@ -201,7 +200,7 @@ OBJECTID            ("self"|{LETTER}({LETTER}|{DIGIT}|"_")*)
   *  Escape sequence \c is accepted for all characters c. Except for 
   *  \n \t \b \f, the result is c.
   *
-*/
+  */
 
 \" {
   BEGIN(STRING);
@@ -340,12 +339,16 @@ OBJECTID            ("self"|{LETTER}({LETTER}|{DIGIT}|"_")*)
 
 
 
-/* Line tracking  */
+ /*
+  * Line tracking
+  */
 
 \n        {  curr_lineno++;  }
 {BLANK}+  { }
 
-/* Everything else - error */
+ /*
+  * Everything else - error
+  */
 
 . {
   cool_yylval.error_msg = yytext;

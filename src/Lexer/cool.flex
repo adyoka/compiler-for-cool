@@ -7,6 +7,9 @@
  *  output, so headers and global definitions are placed here to be visible
  * to the code in the file.  Don't remove anything that was here initially
  */
+
+%option noyywrap
+
 %{
 #include <cool-parse.h>
 #include <stringtab.h>
@@ -43,11 +46,11 @@ extern YYSTYPE cool_yylval;
  *  Add Your own definitions here
  */
 
+int comment_depth = 0;
+int string_const_len = 0;
+
 %}
 
-int comment_depth = 0;
-
-int string_const_len = 0;
 
 /* Conditions declarations */
 %x COMMENT
@@ -109,7 +112,7 @@ OBJECTID            ("self"|{LETTER}({LETTER}|{DIGIT}|"_")*)
   curr_lineno++;
   BEGIN(INITIAL);
 }
-<COMMENT>.  { }
+<COMMENT>. { }
 
 {NESTED_COMMENT_START} {
   BEGIN(NESTED_COMMENT);

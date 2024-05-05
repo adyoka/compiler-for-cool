@@ -1,7 +1,5 @@
-README file for Programming Assignment 3 (C++ edition)
-======================================================
 
-Your directory should now contain the following files:
+This directory contains:
 
  Makefile
  README
@@ -27,19 +25,9 @@ The include (.h) files for this assignment can be found in
 	The Makefile contains targets for compiling and running your
 	program. DO NOT MODIFY.
     
-	The README contains this info. Part of the assignment is to
-	fill in the README with the write-up for your project. You should
-	explain design decisions, explain why your code is correct, and why
-	your test cases are adequate. It is part of the assignment to
-	clearly and concisely explain things in text as well as to comment
-	your code. Just edit this file.
+	The README contains this info. 
 
-	cool.y is the skeleton for the parser specification that you
-	are to write. It already contains productions for the program
-	and the classes. Use them as an example to write the remaining
-	productions.  You should also read the bison documentation.
-	This skeleton will compile and run as is, but it doesn't
-	do much.
+	cool.y is the skeleton for the parser specification. 
 
 	good.cl, bad.cl test a few features of the grammar. You should
 	add tests to ensure that good.cl exercises every legal
@@ -125,8 +113,3 @@ Instructions
 	you probably forgot this step.
 
 	GOOD LUCK!
-
----8<------8<------8<------8<---cut here---8<------8<------8<------8<---
-
-Write-up for PA3
-----------------

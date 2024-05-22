@@ -85,8 +85,14 @@ static void initialize_constants(void)
 
 ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) {
 
-    /* Fill this in */
+    this->install_classes(classes);
+    this->build_inhertiance_graph();
 
+    if (this->errors()) {
+        cerr << "Compilation halted due to static semantic errors." << endl;
+        exit(1);
+    }
+    
 }
 
 void ClassTable::install_basic_classes() {
@@ -188,7 +194,167 @@ void ClassTable::install_basic_classes() {
 						      Str, 
 						      no_expr()))),
 	       filename);
+    
+    this->classMap[Object] = Object_class;
+    this->classMap[IO] = IO_class;
+    this->classMap[Int] = Int_class;
+    this->classMap[Bool] = Bool_class;
+    this->classMap[Str] = Str_class;
 }
+
+bool ClassTable::is_basic_class(Symbol symbol) {
+    return (
+        symbol == Object ||
+        symbol == IO     ||
+        symbol == Int    ||
+        symbol == Bool   ||
+        symbol == Str
+    );
+}
+
+
+void ClassTable::install_classes(Classes classes)   {
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        Class_ curr_class = classes->nth(i);
+        Symbol class_name = curr_class->get_name();
+        Symbol parent_name = curr_class->get_parent_name();
+        if (is_basic_class(class_name) || class_name == SELF_TYPE)
+        {
+            semant_error(curr_class) << "Redefinition of " << class_name << " is not allowed. \n";
+        }
+        else if (this->classMap.find(class_name) != this->classMap.end()) {
+            semant_error(curr_class) << "Class " << curr_class->get_name() << " was previously defined.\n";
+        }
+        
+        else {
+            this->classMap[class_name] = curr_class;
+        }
+    }
+}
+
+void ClassTable::build_inhertiance_graph() {
+    for (auto const& mapEntry : this->classMap) {
+        Symbol class_name = mapEntry.first;
+
+        Class_ curr_class = mapEntry.second;
+        Symbol class_parent_name = curr_class->get_parent_name();
+
+        if (
+            class_parent_name == Int ||
+            class_parent_name == Bool ||
+            class_parent_name == Str    ||
+            class_parent_name == SELF_TYPE
+        ) {
+            semant_error(curr_class) << "Class " << curr_class->get_name() << " cannot inherit basic class " << class_parent_name << ".\n";
+        }
+
+        if (this->classMap.find(class_parent_name) == this->classMap.end())
+        {
+            semant_error(curr_class) << "Class "<< class_name<< " inherits from an undefined class "<< class_parent_name<< ".\n";
+        }
+
+        if (this->inheritanceMap.find(class_parent_name) == this->inheritanceMap.end()) 
+            this->inheritanceMap[class_parent_name] = std::vector<Symbol>();
+    
+        this->inheritanceMap[class_parent_name].push_back(class_name);
+
+    }   
+}
+
+enum Color { gray, black, white };
+std::unordered_map<Symbol, Color>colorMap;
+
+bool ClassTable::traverse_graph(Symbol symbol) {
+    colorMap[symbol] = gray;
+    for (auto const& child_class : inheritanceMap[symbol]) {
+        if (colorMap[child_class] == gray) {
+            semant_error(classMap[symbol])<<"There is a circular dependency between classes: "<<symbol<<" and "<<child_class<<".\n";
+            return false;
+        }
+        if (!traverse_graph(child_class)) 
+            return false;
+    }
+    colorMap[symbol] = black;
+    return true;
+}
+
+bool ClassTable::is_acyclic() {
+    for (auto const& mapEntry : this->classMap) {
+        colorMap[mapEntry.first] = white;
+    }
+
+    for (auto const& mapEntry : this->classMap) {
+        Symbol class_name = mapEntry.first;
+        if (colorMap[class_name] == white) {
+            if (!this->traverse_graph(class_name)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+
+bool ClassTable::check_main() {
+    if (classMap.find(Main) == classMap.end()) {
+        semant_error()<<"Class Main is not defined.\n";
+        return false;
+    }
+
+    Class_ main_class = classMap[Main];
+    Features features = main_class->get_features();
+
+    for (int i = features->first(); features->more(i); i = features->next(i)) {
+        if (features->nth(i)->is_method() && static_cast<method_class*>(features->nth(i))->get_name() == main_meth   ){
+            return true;
+        }
+    }
+
+    semant_error(main_class) << "No 'main' method in class Main.\n";
+    return false;
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////////////
+//
+//                        Features utilities
+//
+////////////////////////////////////////////////////////////////////
+
+
+void ClassTable::install_methods(Classes classes) {
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        Class_ curr_class = classes->nth(i);
+        Features features = curr_class->get_features();
+        std::unordered_map<Symbol, method_class*> methodsMap;
+        for (int i = features->first(); features->more(i); i = features->next(i)) {
+            if (features->nth(i)->is_method()) {
+                method_class* method = static_cast<method_class*>(features->nth(i));
+                Symbol m_name = method->get_name();
+                if (methodsMap.find(m_name) != methodsMap.end()) {
+                    semant_error(curr_class) 
+                    << "Method " << m_name << " has already been defined in the class" 
+                    << curr_class->get_name() << ".\n";
+                }
+                else {
+                    methodsMap[m_name] = method;
+                }
+            }
+        }
+
+        this->class_methods[curr_class->get_name()] = methodsMap;
+    }
+}
+
+
+
+
+
+
+
 
 ////////////////////////////////////////////////////////////////////
 //
@@ -241,10 +407,18 @@ void program_class::semant()
 {
     initialize_constants();
 
-    /* ClassTable constructor may do some semantic analysis */
+    // stage 1
     ClassTable *classtable = new ClassTable(classes);
+    if (classtable->is_acyclic() || classtable->check_main()) {
+        cerr << "Compilation halted due to static semantic errors." << endl;
+	    exit(1);
+    }
 
-    /* some semantic analysis code may go here */
+    // stage 2
+    classtable->install_methods(classes);
+    
+    
+
 
     if (classtable->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;

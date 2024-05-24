@@ -5,11 +5,12 @@
 #include <stdarg.h>
 #include "semant.h"
 #include "utilities.h"
-
+#include <unordered_set>
 
 extern int semant_debug;
 extern char *curr_filename;
 
+SymbolTable<Symbol, Symbol> *symbol_table;
 //////////////////////////////////////////////////////////////////////
 //
 // Symbols
@@ -212,6 +213,20 @@ bool ClassTable::is_basic_class(Symbol symbol) {
     );
 }
 
+// Class_ ClassTable::get_class(Symbol symbol) {
+//     if (this->classMap.find(symbol) == this->classMap.end())
+//         return No_class;
+
+//     return classMap[symbol];
+// }
+
+Symbol ClassTable::get_parent_class(Symbol symbol) {
+    if (this->parentClass.find(symbol) == this->parentClass.end())
+        return No_type;
+
+    return parentClass[symbol];
+}
+
 
 void ClassTable::install_classes(Classes classes)   {
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
@@ -238,6 +253,8 @@ void ClassTable::build_inhertiance_graph() {
 
         Class_ curr_class = mapEntry.second;
         Symbol class_parent_name = curr_class->get_parent_name();
+
+        parentClass[class_name] = class_parent_name;
 
         if (
             class_parent_name == Int ||
@@ -325,11 +342,31 @@ bool ClassTable::check_main() {
 ////////////////////////////////////////////////////////////////////
 
 
-void ClassTable::install_methods(Classes classes) {
+void ClassTable::add_attributes_scope(Class_ curr_class) {
+    symbol_table->enterscope();
+    std::unordered_map<Symbol, attr_class*> attributes = this->class_attrs[curr_class->get_name()];
+    for (const auto& attr : attributes) {
+        symbol_table->addid(
+            attr.first,
+            new Symbol(attr.second->get_type())
+        );
+    }
+
+    if (curr_class->get_name() == Object) return;
+
+    if (parentClass.find(curr_class->get_name()) != parentClass.end()) {
+        Symbol parent_class_name = parentClass[curr_class->get_name()];
+        add_attributes_scope(classMap[parent_class_name]);
+    }
+}
+
+void ClassTable::install_features(Classes classes) {
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         Class_ curr_class = classes->nth(i);
         Features features = curr_class->get_features();
         std::unordered_map<Symbol, method_class*> methodsMap;
+        std::unordered_map<Symbol, attr_class*> attrsMap;
+
         for (int i = features->first(); features->more(i); i = features->next(i)) {
             if (features->nth(i)->is_method()) {
                 method_class* method = static_cast<method_class*>(features->nth(i));
@@ -343,12 +380,227 @@ void ClassTable::install_methods(Classes classes) {
                     methodsMap[m_name] = method;
                 }
             }
+            //if (features->nth(i)->is_attr()) {
+            else {
+                attr_class* attr = static_cast<attr_class*>(features->nth(i));
+                Symbol a_name = attr->get_name();
+
+                if (attrsMap.find(a_name) != attrsMap.end()) {
+                    semant_error(curr_class) 
+                    << "Attribute " << a_name << " has already been defined in the class" 
+                    << curr_class->get_name() << ".\n";
+                }
+                else 
+                    attrsMap[a_name] = attr;
+            }
         }
 
         this->class_methods[curr_class->get_name()] = methodsMap;
+        this->class_attrs[curr_class->get_name()] = attrsMap;
     }
 }
 
+
+
+void ClassTable::check_method(Class_ curr_class, method_class* curr_method, method_class* par_method) {
+    Formals curr_method_formals = curr_method->get_formals();
+    Formals par_method_formals = par_method->get_formals();
+
+    if(curr_method->get_return_type() != par_method->get_return_type()) {
+        semant_error(curr_class) << "In redefined method " << curr_method->get_name()<< ", the return type " << curr_method->get_return_type() 
+            << " is different from the ancestor method return type " << par_method->get_return_type()<< ".\n";
+    }
+
+    int curr_method_argnum = 0;
+    int par_method_argnum = 0;
+    while (curr_method_formals->more(curr_method_argnum))
+        curr_method_argnum = curr_method_formals->next(curr_method_argnum);
+
+    while (par_method_formals->more(par_method_argnum))
+        par_method_argnum = par_method_formals->next(par_method_argnum);
+
+    if (curr_method_argnum != par_method_argnum) {
+        semant_error(curr_class) << "In redefined method " << curr_method->get_name() << ", the number of arguments " 
+            << "(" << curr_method_argnum << ")"<< " differs from the ancestor method's "<< "number of arguments "
+            << "(" << par_method_argnum << ")"<< ".\n";
+    }
+
+    int idx1 = 0, idx2 = 0;
+
+    while (curr_method_formals->more(idx1) && par_method_formals->more(idx2))
+    {
+        Formal curr_formal = curr_method_formals->nth(idx1);
+        Formal parent_formal = par_method_formals->nth(idx2);
+
+        if (curr_formal->get_type() != parent_formal->get_type()) {
+            semant_error(curr_class)<< "In redefined method "<< curr_method->get_name()<< ", the type of argument " << curr_formal->get_type() 
+                << " differs from the ancestor method's corresponding argument type "<< parent_formal->get_type()<< ".\n";
+        }
+
+        idx1 = curr_method_formals->next(idx1);
+        idx2 = par_method_formals->next(idx2);
+    }
+
+    if (parentClass.find(curr_class->get_name()) != parentClass.end()) {
+        Symbol parent_class_name = parentClass[curr_class->get_name()];
+        Class_ parent_class = classMap[parent_class_name];
+
+        check_method(
+            parent_class, 
+            curr_method, 
+            class_methods[parent_class_name][curr_class->get_name()]
+        );
+    }
+
+}
+
+
+void ClassTable::check_attr(Class_ curr_class, attr_class* attr) {
+    if (class_attrs[curr_class->get_name()].find(attr->get_name()) != class_attrs[curr_class->get_name()].end()) {
+        semant_error(curr_class)<< " Attribute "<< attr->get_name()<< " is an attribute of an inherited class.\n";
+        return;
+    }
+    Symbol parent_name = parentClass[curr_class->get_name()];
+    if (classMap.find(parent_name) != classMap.end()) {
+        check_attr(classMap[parent_name], attr);
+    }
+}
+
+
+
+void ClassTable::type_check(Classes classes) {
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        Class_ curr_class = classes->nth(i);
+        // symbol_table = new SymbolTable<Symbol, Symbol>();
+        symbol_table->enterscope();
+        symbol_table->addid(self, new Symbol(curr_class->get_name()));
+
+        add_attributes_scope(curr_class);
+
+        for (auto const& methodsEntry : class_methods[curr_class->get_name()]) {
+            check_method(curr_class, methodsEntry.second, methodsEntry.second);
+        }
+
+        for (auto const& attrEntry : class_attrs[curr_class->get_name()]) {
+            if (parentClass.find(curr_class->get_name()) != parentClass.end()) {
+                Symbol parent_class_name = parentClass[curr_class->get_name()];
+                Class_ parent_class = classMap[parent_class_name];
+
+                check_attr(parent_class, attrEntry.second);
+            }
+
+        }
+
+        symbol_table->exitscope();
+    }
+}
+
+
+Symbol ClassTable::least_common_ancestor(Symbol left, Symbol right, ClassTableP class_table) { // least common ancestor's type
+
+    Symbol l_class = left;
+    Symbol r_class = left;
+    std::unordered_set<Symbol> r_ancestors;
+    
+    while (r_class != Object || r_class != No_type) 
+    {
+        r_ancestors.insert(r_class);
+        r_class = class_table->get_parent_class(r_class);
+    }
+    while (l_class != Object || l_class != No_type) 
+    {
+        if (r_ancestors.find(l_class) != r_ancestors.end())
+            return l_class;
+        l_class = class_table->get_parent_class(l_class);
+    }
+    return Object;
+}
+
+
+////////////////////////////////////////////////////////////////////
+//
+//                        Type checking
+//
+////////////////////////////////////////////////////////////////////
+
+
+Symbol object_class::type_check(ClassTableP class_table) {
+    if (name == self) {
+        type = SELF_TYPE;
+    } 
+    else if (symbol_table->lookup(name)) {
+        this->set_type(*symbol_table->lookup(name));
+    } else {
+        class_table->semant_error() << "Undeclared identifier " << name << ".\n";
+        type = Object;
+    }
+    return get_type();
+}
+
+Symbol new__class::type_check(ClassTableP class_table) {
+    if (this->type_name != SELF_TYPE && !class_table->is_type_defined(type_name)) {
+        class_table->semant_error() << "'new' used with undefined class " << this->type_name << ".\n";
+        this->type_name = Object;
+    }
+    type = this->type_name;
+    return type;
+}
+
+
+Symbol no_expr_class::type_check(ClassTableP) {
+    this->set_type(No_type);
+    return No_type;
+}
+
+Symbol isvoid_class::type_check(ClassTableP class_table) {
+    e1->type_check(class_table);
+    this->set_type(Bool);
+    return Bool;
+}
+
+Symbol block_class::type_check(ClassTableP class_table) {
+    Symbol nth_body_expr_type = Object;
+    for (int i = body->first(); body->more(i); i = body->next(i))
+        nth_body_expr_type = body->nth(i)->type_check(class_table);
+    this->set_type(nth_body_expr_type);
+    return nth_body_expr_type;
+}
+
+Symbol branch_class::type_check(ClassTableP class_table) {
+    if (name == self) {
+        class_table->semant_error() << "'self' cannot be bound in a 'branch' expression.";
+    }
+    symbol_table->enterscope();
+    symbol_table->addid(name, new Symbol(type_decl));
+    Symbol expr_type = expr->type_check(class_table);
+    this->set_type(expr_type);
+    symbol_table->exitscope();
+    return expr_type;
+}
+
+
+Symbol typcase_class::type_check(ClassTableP class_table) {
+    Symbol expr_type = expr->type_check(class_table);
+
+    std::unordered_set<Symbol> branch_type_decls;
+
+    for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+        branch_class* branch = static_cast<branch_class*>(cases->nth(i));
+        Symbol branch_type_decl = branch->get_type_decl();
+        if (branch_type_decls.find(branch_type_decl) != branch_type_decls.end())
+            class_table->semant_error()<< "Duplicate branch type" << branch_type_decl << " in case statement.\n";
+        else
+            branch_type_decls.insert(branch_type_decl);
+
+        Symbol branch_type = branch->type_check(class_table);
+        if (i == cases->first())
+            type = branch_type;
+        else if (type != SELF_TYPE || branch_type != SELF_TYPE)
+            type = class_table->least_common_ancestor(type, branch_type, class_table);
+    }
+
+    return type;
+}
 
 
 
@@ -415,8 +667,8 @@ void program_class::semant()
     }
 
     // stage 2
-    classtable->install_methods(classes);
-    
+    classtable->install_features(classes);
+    classtable->type_check(classes);
     
 
 

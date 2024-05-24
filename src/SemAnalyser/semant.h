@@ -32,6 +32,7 @@ private:
   ostream& error_stream;
 
   std::unordered_map<Symbol, Class_> classMap;
+  std::unordered_map<Symbol, Symbol> parentClass;
   std::unordered_map<Symbol, std::vector<Symbol>> inheritanceMap;
   std::unordered_map<Symbol, std::unordered_map<Symbol, method_class*>> class_methods;
   std::unordered_map<Symbol, std::unordered_map<Symbol, attr_class*>> class_attrs;
@@ -43,12 +44,21 @@ public:
   ostream& semant_error(Class_ c);
   ostream& semant_error(Symbol filename, tree_node *t);
 
+  
+  Class_ get_class(Symbol s) { return classMap[s]; }
+  Symbol get_parent_class(Symbol);
+  bool is_type_defined(Symbol s) { return classMap.find(s) != classMap.end(); }
   bool is_basic_class(Symbol);
   bool traverse_graph(Symbol);
   bool is_acyclic();
   bool check_main();
 
-  void install_methods(Classes);
+  void install_features(Classes);
+  void add_attributes_scope(Class_);
+  void type_check(Classes);
+  void check_method(Class_, method_class*, method_class*);
+  void check_attr(Class_, attr_class*);
+  Symbol least_common_ancestor(Symbol, Symbol, ClassTableP);
 };
 
 

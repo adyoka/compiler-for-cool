@@ -44,6 +44,7 @@ public:
   ostream& semant_error(Class_ c);
   ostream& semant_error(Symbol filename, tree_node *t);
 
+  Class_ curr_class;
   
   Class_ get_class(Symbol s) { return classMap[s]; }
   Symbol get_parent_class(Symbol);
@@ -58,7 +59,8 @@ public:
   void type_check(Classes);
   void check_method(Class_, method_class*, method_class*);
   void check_attr(Class_, attr_class*);
-  Symbol least_common_ancestor(Symbol, Symbol, ClassTableP);
+  Symbol least_common_ancestor(Symbol, Symbol);
+  bool conform(Symbol, Symbol);
 };
 
 

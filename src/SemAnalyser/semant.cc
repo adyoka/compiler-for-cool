@@ -230,7 +230,7 @@ Symbol ClassTable::get_parent_class(Symbol symbol) {
 
 void ClassTable::install_classes(Classes classes)   {
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
-        Class_ curr_class = classes->nth(i);
+        curr_class = classes->nth(i);
         Symbol class_name = curr_class->get_name();
         Symbol parent_name = curr_class->get_parent_name();
         if (is_basic_class(class_name) || class_name == SELF_TYPE)
@@ -251,7 +251,7 @@ void ClassTable::build_inhertiance_graph() {
     for (auto const& mapEntry : this->classMap) {
         Symbol class_name = mapEntry.first;
 
-        Class_ curr_class = mapEntry.second;
+        curr_class = mapEntry.second;
         Symbol class_parent_name = curr_class->get_parent_name();
 
         parentClass[class_name] = class_parent_name;
@@ -332,6 +332,32 @@ bool ClassTable::check_main() {
 }
 
 
+void ClassTable::type_check(Classes classes) {
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        curr_class = classes->nth(i);
+        // symbol_table = new SymbolTable<Symbol, Symbol>();
+        symbol_table->enterscope();
+        symbol_table->addid(self, new Symbol(curr_class->get_name()));
+
+        add_attributes_scope(curr_class);
+
+        for (auto const& methodsEntry : class_methods[curr_class->get_name()]) {
+            check_method(curr_class, methodsEntry.second, methodsEntry.second);
+        }
+
+        for (auto const& attrEntry : class_attrs[curr_class->get_name()]) {
+            if (parentClass.find(curr_class->get_name()) != parentClass.end()) {
+                Symbol parent_class_name = parentClass[curr_class->get_name()];
+                Class_ parent_class = classMap[parent_class_name];
+
+                check_attr(parent_class, attrEntry.second);
+            }
+
+        }
+
+        symbol_table->exitscope();
+    }
+}
 
 
 
@@ -362,7 +388,7 @@ void ClassTable::add_attributes_scope(Class_ curr_class) {
 
 void ClassTable::install_features(Classes classes) {
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
-        Class_ curr_class = classes->nth(i);
+        curr_class = classes->nth(i);
         Features features = curr_class->get_features();
         std::unordered_map<Symbol, method_class*> methodsMap;
         std::unordered_map<Symbol, attr_class*> attrsMap;
@@ -402,12 +428,12 @@ void ClassTable::install_features(Classes classes) {
 
 
 
-void ClassTable::check_method(Class_ curr_class, method_class* curr_method, method_class* par_method) {
+void ClassTable::check_method(Class_ current_class, method_class* curr_method, method_class* par_method) {
     Formals curr_method_formals = curr_method->get_formals();
     Formals par_method_formals = par_method->get_formals();
 
     if(curr_method->get_return_type() != par_method->get_return_type()) {
-        semant_error(curr_class) << "In redefined method " << curr_method->get_name()<< ", the return type " << curr_method->get_return_type() 
+        semant_error(current_class) << "In redefined method " << curr_method->get_name()<< ", the return type " << curr_method->get_return_type() 
             << " is different from the ancestor method return type " << par_method->get_return_type()<< ".\n";
     }
 
@@ -420,7 +446,7 @@ void ClassTable::check_method(Class_ curr_class, method_class* curr_method, meth
         par_method_argnum = par_method_formals->next(par_method_argnum);
 
     if (curr_method_argnum != par_method_argnum) {
-        semant_error(curr_class) << "In redefined method " << curr_method->get_name() << ", the number of arguments " 
+        semant_error(current_class) << "In redefined method " << curr_method->get_name() << ", the number of arguments " 
             << "(" << curr_method_argnum << ")"<< " differs from the ancestor method's "<< "number of arguments "
             << "(" << par_method_argnum << ")"<< ".\n";
     }
@@ -433,7 +459,7 @@ void ClassTable::check_method(Class_ curr_class, method_class* curr_method, meth
         Formal parent_formal = par_method_formals->nth(idx2);
 
         if (curr_formal->get_type() != parent_formal->get_type()) {
-            semant_error(curr_class)<< "In redefined method "<< curr_method->get_name()<< ", the type of argument " << curr_formal->get_type() 
+            semant_error(current_class)<< "In redefined method "<< curr_method->get_name()<< ", the type of argument " << curr_formal->get_type() 
                 << " differs from the ancestor method's corresponding argument type "<< parent_formal->get_type()<< ".\n";
         }
 
@@ -441,14 +467,14 @@ void ClassTable::check_method(Class_ curr_class, method_class* curr_method, meth
         idx2 = par_method_formals->next(idx2);
     }
 
-    if (parentClass.find(curr_class->get_name()) != parentClass.end()) {
-        Symbol parent_class_name = parentClass[curr_class->get_name()];
+    if (parentClass.find(current_class->get_name()) != parentClass.end()) {
+        Symbol parent_class_name = parentClass[current_class->get_name()];
         Class_ parent_class = classMap[parent_class_name];
 
         check_method(
             parent_class, 
             curr_method, 
-            class_methods[parent_class_name][curr_class->get_name()]
+            class_methods[parent_class_name][current_class->get_name()]
         );
     }
 
@@ -468,53 +494,43 @@ void ClassTable::check_attr(Class_ curr_class, attr_class* attr) {
 
 
 
-void ClassTable::type_check(Classes classes) {
-    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
-        Class_ curr_class = classes->nth(i);
-        // symbol_table = new SymbolTable<Symbol, Symbol>();
-        symbol_table->enterscope();
-        symbol_table->addid(self, new Symbol(curr_class->get_name()));
-
-        add_attributes_scope(curr_class);
-
-        for (auto const& methodsEntry : class_methods[curr_class->get_name()]) {
-            check_method(curr_class, methodsEntry.second, methodsEntry.second);
-        }
-
-        for (auto const& attrEntry : class_attrs[curr_class->get_name()]) {
-            if (parentClass.find(curr_class->get_name()) != parentClass.end()) {
-                Symbol parent_class_name = parentClass[curr_class->get_name()];
-                Class_ parent_class = classMap[parent_class_name];
-
-                check_attr(parent_class, attrEntry.second);
-            }
-
-        }
-
-        symbol_table->exitscope();
-    }
-}
-
-
-Symbol ClassTable::least_common_ancestor(Symbol left, Symbol right, ClassTableP class_table) { // least common ancestor's type
+Symbol ClassTable::least_common_ancestor(Symbol left, Symbol right) { // least common ancestor's type
 
     Symbol l_class = left;
     Symbol r_class = left;
     std::unordered_set<Symbol> r_ancestors;
     
-    while (r_class != Object || r_class != No_type) 
+    while (r_class != Object) 
     {
         r_ancestors.insert(r_class);
-        r_class = class_table->get_parent_class(r_class);
+        r_class = parentClass[r_class];
     }
-    while (l_class != Object || l_class != No_type) 
+    while (l_class != Object) 
     {
         if (r_ancestors.find(l_class) != r_ancestors.end())
             return l_class;
-        l_class = class_table->get_parent_class(l_class);
+        l_class = parentClass[l_class];
     }
     return Object;
 }
+
+bool ClassTable::conform(Symbol type1, Symbol type2) {
+    if (type1 == No_type) return true;
+
+    if (type1 == SELF_TYPE) {
+        if (type2 == SELF_TYPE)
+            return true;
+        else 
+            type1 = curr_class->get_name();
+    }
+    Symbol current = type1;
+
+    while (current != Object && current != type2)
+        current = parentClass[current];
+
+    return current == type2;
+}
+
 
 
 ////////////////////////////////////////////////////////////////////
@@ -522,6 +538,7 @@ Symbol ClassTable::least_common_ancestor(Symbol left, Symbol right, ClassTableP 
 //                        Type checking
 //
 ////////////////////////////////////////////////////////////////////
+
 
 
 Symbol object_class::type_check(ClassTableP class_table) {
@@ -596,16 +613,234 @@ Symbol typcase_class::type_check(ClassTableP class_table) {
         if (i == cases->first())
             type = branch_type;
         else if (type != SELF_TYPE || branch_type != SELF_TYPE)
-            type = class_table->least_common_ancestor(type, branch_type, class_table);
+            type = class_table->least_common_ancestor(type, branch_type);
     }
 
     return type;
 }
 
+Symbol loop_class::type_check(ClassTableP class_table) {
+    Symbol pred_type = pred->type_check(class_table);
+    Symbol body_type = body->type_check(class_table);
+
+    if (pred_type != Bool)
+    {
+        class_table->semant_error()<< "Expected the predicate of while to be of type Bool"<< " but got the predicate of type "
+        << pred_type<< " instead .\n";
+    }
+
+    this->set_type(Object);
+    return Object; 
+}
+
+Symbol let_class::type_check(ClassTableP class_table) {
+    symbol_table->enterscope();
+    if (identifier == self)
+        class_table->semant_error() << "'self' cannot be bound in a 'let' expression.\n";
+
+    Symbol init_type = init->type_check(class_table);
+
+    if (type_decl != SELF_TYPE && !class_table->is_type_defined(type_decl))
+        class_table->semant_error() << "Type "<<type_decl<< " of let-bound identifier "<< identifier<< " is undefined.\n";
+
+    else if (init_type != No_type && !class_table->conform(init_type, type_decl))
+        class_table->semant_error()<< "Inferred type "<< init_type<< " in initialization of " 
+        <<identifier<< " does not conform to identifier's declared type "<< type_decl << ".\n";
+            
+    symbol_table->addid(identifier, new Symbol(type_decl));
+    this->set_type(body->type_check(class_table));
+    symbol_table->exitscope();
+    return type;
+}
+
+
+Symbol cond_class::type_check(ClassTableP class_table) {
+    Symbol pred_type = pred->type_check(class_table);
+    Symbol then_type = then_exp->type_check(class_table);
+    Symbol else_type = else_exp->type_check(class_table);
+
+    if (pred_type != Bool)
+    {
+        class_table->semant_error()<< "Expected the predicate of if to be of type Bool,"<< " but got the predicate of type "
+            << pred_type<< " instead .\n";
+    }
+
+    Symbol cond_type = class_table->least_common_ancestor(then_type, else_type);
+    this->set_type(cond_type);
+    return cond_type;
+}
+
+
+Symbol comp_class::type_check(ClassTableP class_table) {
+    Symbol expr_type = e1->type_check(class_table);
+    if (expr_type == Bool) {
+        this->set_type(expr_type);
+        return expr_type;
+    }
+    this->set_type(Object);
+    class_table->semant_error()<< "Argument of 'not' has type "<< expr_type << " instead of Bool.\n";
+    return Object;
+}
+
+
+Symbol leq_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+
+    if(left_type == Int && right_type == Int) {
+        this->set_type(Bool);
+    }
+    else {
+        this->set_type(Object);
+
+        class_table->semant_error()<< "Expected both arguments of operator <= to be of type Int"
+            << " but got arguments of types "<< left_type << " and "<< right_type<< ".\n";
+    }
+    return this->get_type();
+}
+
+Symbol eq_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+    
+    bool is_left_type_primitive = left_type == Int || left_type == Bool || left_type == Str;
+    bool is_right_type_primitive = right_type == Int || right_type == Bool || right_type == Str;
+    this->set_type(Bool);
+
+    if ((is_left_type_primitive && is_right_type_primitive) && left_type != right_type)
+    {
+        class_table->semant_error() << "Illegal comparison with a basic type.\n";
+        this->set_type(Object);
+    }
+
+    return this->get_type();
+}
+
+Symbol lt_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+
+    if(left_type == Int && right_type == Int) {
+        this->set_type(Bool);
+    }
+    else
+    {
+        this->set_type(Object);
+        class_table->semant_error()<< "Expected both arguments of operator < to be of type Int"
+            << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
+    }
+    return this->get_type();
+}
+
+Symbol neg_class::type_check(ClassTableP class_table) {
+    Symbol expr_type = e1->type_check(class_table);
+    this->set_type(Int);
+
+    if (expr_type != Int)
+    {
+        this->set_type(Object);
+        class_table -> semant_error() << "Argument of the operator '~' has type " << expr_type << " instead of Int.\n";
+    }
+    return this->get_type();
+}
+
+
+Symbol mul_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+    if(left_type == Int && right_type == Int)
+        this->set_type(Int);
+    else
+    {
+        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+            << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
+        this->set_type(Object);
+    }
+    return this->get_type();
+}
+
+Symbol divide_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+    if(left_type == Int && right_type == Int)
+        this->set_type(Int);
+    else
+    {
+        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+            << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
+        this->set_type(Object);
+    }
+    return this->get_type();
+}
+
+Symbol sub_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+    if(left_type == Int && right_type == Int)
+        this->set_type(Int);
+    else
+    {
+        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+            << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
+        this->set_type(Object);
+    }
+    return this->get_type();
+}
+Symbol plus_class::type_check(ClassTableP class_table) {
+    Symbol left_type = e1->type_check(class_table);
+    Symbol right_type = e2->type_check(class_table);
+    if(left_type == Int && right_type == Int)
+        this->set_type(Int);
+    else
+    {
+        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+            << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
+        this->set_type(Object);
+    }
+    return this->get_type();
+}
 
 
 
+Symbol assign_class::type_check(ClassTableP class_table) {
+    Symbol expr_type = expr->type_check(class_table);
+    this->set_type(expr_type);
 
+    if (name == self) {
+        class_table->semant_error() << "Cannot assign to 'self'" << ".\n";
+        this->set_type(Object);
+    }
+
+    Symbol* identifier_type = symbol_table->lookup(name);
+
+    if (!identifier_type) {
+        class_table->semant_error()<< "Tried to assign undeclared identifier "<< name<< ".\n";
+        this->set_type(expr_type);
+    }
+
+    if (!class_table->conform(expr_type, *identifier_type)) {
+        class_table->semant_error()<< "The identifier " << name << " has been declared as  "<< *identifier_type
+            << " but assigned with incompatible type "<< expr_type<< ".\n";
+        this->set_type(Object);
+        
+    }
+    
+    return this->get_type();
+}
+
+
+Symbol dispatch_class::type_check(ClassTableP class_table) {
+    Symbol expr_type = expr->type_check(class_table);
+
+    if (expr_type != SELF_TYPE && !class_table->is_type_defined(expr_type)) {
+
+        class_table->semant_error()<< "Dispatch on undefined class "<< expr_type<< ".\n";
+        this->set_type(Object);
+        return this->get_type();;
+    }
+
+
+}
 
 
 ////////////////////////////////////////////////////////////////////

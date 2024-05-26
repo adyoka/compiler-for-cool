@@ -43,11 +43,13 @@ public:
   ostream& semant_error();
   ostream& semant_error(Class_ c);
   ostream& semant_error(Symbol filename, tree_node *t);
+    ostream& semant_error(tree_node *t);
 
   Class_ curr_class;
   
   Class_ get_class(Symbol s) { return classMap[s]; }
   Symbol get_parent_class(Symbol);
+  method_class* get_class_method(Symbol, Symbol);
   bool is_type_defined(Symbol s) { return classMap.find(s) != classMap.end(); }
   bool is_basic_class(Symbol);
   bool traverse_graph(Symbol);
@@ -61,6 +63,7 @@ public:
   void check_attr(Class_, attr_class*);
   Symbol least_common_ancestor(Symbol, Symbol);
   bool conform(Symbol, Symbol);
+  method_class* find_method(Symbol, Symbol);
 };
 
 

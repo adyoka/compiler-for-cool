@@ -1,7 +1,5 @@
-README file for Programming Assignment 4 (C++ edition)
-======================================================
 
-Your directory should now contain the following files:
+Directory contains:
 
  Makefile
  README
@@ -32,21 +30,12 @@ The include (.h) files for this assignment can be found in
 	The Makefile contains targets for compiling and running your
 	program. DO NOT MODIFY.
 
-	The README contains this info. Part of the assignment is to fill
-	the README with the write-up for your project. You should
-	explain design decisions, explain why your code is correct, and
-	why your test cases are adequate. It is part of the assignment
-	to clearly and concisely explain things in text as well as to
-	comment your code.  Just edit this file.
+	The README contains this info. 
 
 	good.cl and bad.cl test a few features of the semantic checker.
-	You should add tests to ensure that good.cl exercises as many
-	legal semantic combinations as possible and that bad.cl
-	exercises as many kinds of semantic errors as possible.
 
 	semant.h contains declarations and definitions for the semantic
-	analyzer.  Place class definitions for the structures you will
-	use here.
+	analyzer.  
 
 	cool-tree.aps contains the definitions for the tree language
 	which you use to construct the abstract syntax tree (AST).
@@ -69,10 +58,6 @@ The include (.h) files for this assignment can be found in
 	in cool-tree.h and cool-tree.handcode.h.  These functions and
 	data members are required for the system to function properly.
 
-        You should add any fields and methods to the classes you need to 
-	perform semantic analysis.  You	will need to add, for example, 
-	methods which traverse the expressions of the tree and implement 
-	the type-checking rules.
 
 	cool-tree.cc contains definitions of the provided methods,
 	and instantiations of the template for the list handling functions.
@@ -157,10 +142,3 @@ Instructions
 	when you switch from one type of machine to the other.
 	If at some point you get weird errors from the linker,	
 	you probably forgot this step.
-
-	GOOD LUCK!
-
----8<------8<------8<------8<---cut here---8<------8<------8<------8<---
-
-Write-up for PA4
-----------------

@@ -343,6 +343,8 @@ void ClassTable::type_check(Classes classes) {
 
         for (auto const& methodsEntry : class_methods[curr_class->get_name()]) {
             check_method(curr_class, methodsEntry.second, methodsEntry.second);
+
+            methodsEntry.second->type_check(this);
         }
 
         for (auto const& attrEntry : class_attrs[curr_class->get_name()]) {
@@ -351,8 +353,9 @@ void ClassTable::type_check(Classes classes) {
                 Class_ parent_class = classMap[parent_class_name];
 
                 check_attr(parent_class, attrEntry.second);
-            }
 
+                attrEntry.second->type_check(this);
+            }
         }
 
         symbol_table->exitscope();
@@ -366,6 +369,15 @@ void ClassTable::type_check(Classes classes) {
 //                        Features utilities
 //
 ////////////////////////////////////////////////////////////////////
+
+
+
+method_class* ClassTable::get_class_method(Symbol class_name, Symbol method_name) {
+    if (class_methods[class_name].find(method_name) == class_methods[class_name].end())
+        return nullptr;
+
+    return class_methods[class_name][method_name];
+}
 
 
 void ClassTable::add_attributes_scope(Class_ curr_class) {
@@ -548,7 +560,7 @@ Symbol object_class::type_check(ClassTableP class_table) {
     else if (symbol_table->lookup(name)) {
         this->set_type(*symbol_table->lookup(name));
     } else {
-        class_table->semant_error() << "Undeclared identifier " << name << ".\n";
+        class_table->semant_error(this) << "Undeclared identifier " << name << ".\n";
         type = Object;
     }
     return get_type();
@@ -556,7 +568,7 @@ Symbol object_class::type_check(ClassTableP class_table) {
 
 Symbol new__class::type_check(ClassTableP class_table) {
     if (this->type_name != SELF_TYPE && !class_table->is_type_defined(type_name)) {
-        class_table->semant_error() << "'new' used with undefined class " << this->type_name << ".\n";
+        class_table->semant_error(this) << "'new' used with undefined class " << this->type_name << ".\n";
         this->type_name = Object;
     }
     type = this->type_name;
@@ -585,7 +597,7 @@ Symbol block_class::type_check(ClassTableP class_table) {
 
 Symbol branch_class::type_check(ClassTableP class_table) {
     if (name == self) {
-        class_table->semant_error() << "'self' cannot be bound in a 'branch' expression.";
+        class_table->semant_error(this) << "'self' cannot be bound in a 'branch' expression.";
     }
     symbol_table->enterscope();
     symbol_table->addid(name, new Symbol(type_decl));
@@ -605,7 +617,7 @@ Symbol typcase_class::type_check(ClassTableP class_table) {
         branch_class* branch = static_cast<branch_class*>(cases->nth(i));
         Symbol branch_type_decl = branch->get_type_decl();
         if (branch_type_decls.find(branch_type_decl) != branch_type_decls.end())
-            class_table->semant_error()<< "Duplicate branch type" << branch_type_decl << " in case statement.\n";
+            class_table->semant_error(this)<< "Duplicate branch type" << branch_type_decl << " in case statement.\n";
         else
             branch_type_decls.insert(branch_type_decl);
 
@@ -625,7 +637,7 @@ Symbol loop_class::type_check(ClassTableP class_table) {
 
     if (pred_type != Bool)
     {
-        class_table->semant_error()<< "Expected the predicate of while to be of type Bool"<< " but got the predicate of type "
+        class_table->semant_error(this)<< "Expected the predicate of while to be of type Bool"<< " but got the predicate of type "
         << pred_type<< " instead .\n";
     }
 
@@ -636,15 +648,15 @@ Symbol loop_class::type_check(ClassTableP class_table) {
 Symbol let_class::type_check(ClassTableP class_table) {
     symbol_table->enterscope();
     if (identifier == self)
-        class_table->semant_error() << "'self' cannot be bound in a 'let' expression.\n";
+        class_table->semant_error(this) << "'self' cannot be bound in a 'let' expression.\n";
 
     Symbol init_type = init->type_check(class_table);
 
     if (type_decl != SELF_TYPE && !class_table->is_type_defined(type_decl))
-        class_table->semant_error() << "Type "<<type_decl<< " of let-bound identifier "<< identifier<< " is undefined.\n";
+        class_table->semant_error(this) << "Type "<<type_decl<< " of let-bound identifier "<< identifier<< " is undefined.\n";
 
     else if (init_type != No_type && !class_table->conform(init_type, type_decl))
-        class_table->semant_error()<< "Inferred type "<< init_type<< " in initialization of " 
+        class_table->semant_error(this)<< "Inferred type "<< init_type<< " in initialization of " 
         <<identifier<< " does not conform to identifier's declared type "<< type_decl << ".\n";
             
     symbol_table->addid(identifier, new Symbol(type_decl));
@@ -661,7 +673,7 @@ Symbol cond_class::type_check(ClassTableP class_table) {
 
     if (pred_type != Bool)
     {
-        class_table->semant_error()<< "Expected the predicate of if to be of type Bool,"<< " but got the predicate of type "
+        class_table->semant_error(this)<< "Expected the predicate of if to be of type Bool,"<< " but got the predicate of type "
             << pred_type<< " instead .\n";
     }
 
@@ -678,7 +690,7 @@ Symbol comp_class::type_check(ClassTableP class_table) {
         return expr_type;
     }
     this->set_type(Object);
-    class_table->semant_error()<< "Argument of 'not' has type "<< expr_type << " instead of Bool.\n";
+    class_table->semant_error(this)<< "Argument of 'not' has type "<< expr_type << " instead of Bool.\n";
     return Object;
 }
 
@@ -693,7 +705,7 @@ Symbol leq_class::type_check(ClassTableP class_table) {
     else {
         this->set_type(Object);
 
-        class_table->semant_error()<< "Expected both arguments of operator <= to be of type Int"
+        class_table->semant_error(this)<< "Expected both arguments of operator <= to be of type Int"
             << " but got arguments of types "<< left_type << " and "<< right_type<< ".\n";
     }
     return this->get_type();
@@ -709,7 +721,7 @@ Symbol eq_class::type_check(ClassTableP class_table) {
 
     if ((is_left_type_primitive && is_right_type_primitive) && left_type != right_type)
     {
-        class_table->semant_error() << "Illegal comparison with a basic type.\n";
+        class_table->semant_error(this) << "Illegal comparison with a basic type.\n";
         this->set_type(Object);
     }
 
@@ -726,7 +738,7 @@ Symbol lt_class::type_check(ClassTableP class_table) {
     else
     {
         this->set_type(Object);
-        class_table->semant_error()<< "Expected both arguments of operator < to be of type Int"
+        class_table->semant_error(this)<< "Expected both arguments of operator < to be of type Int"
             << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
     }
     return this->get_type();
@@ -739,7 +751,7 @@ Symbol neg_class::type_check(ClassTableP class_table) {
     if (expr_type != Int)
     {
         this->set_type(Object);
-        class_table -> semant_error() << "Argument of the operator '~' has type " << expr_type << " instead of Int.\n";
+        class_table -> semant_error(this) << "Argument of the operator '~' has type " << expr_type << " instead of Int.\n";
     }
     return this->get_type();
 }
@@ -752,7 +764,7 @@ Symbol mul_class::type_check(ClassTableP class_table) {
         this->set_type(Int);
     else
     {
-        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+        class_table->semant_error(this)<< "Expected both arguments of operator * to be of type Int"
             << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
         this->set_type(Object);
     }
@@ -766,7 +778,7 @@ Symbol divide_class::type_check(ClassTableP class_table) {
         this->set_type(Int);
     else
     {
-        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+        class_table->semant_error(this)<< "Expected both arguments of operator * to be of type Int"
             << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
         this->set_type(Object);
     }
@@ -780,7 +792,7 @@ Symbol sub_class::type_check(ClassTableP class_table) {
         this->set_type(Int);
     else
     {
-        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+        class_table->semant_error(this)<< "Expected both arguments of operator * to be of type Int"
             << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
         this->set_type(Object);
     }
@@ -793,7 +805,7 @@ Symbol plus_class::type_check(ClassTableP class_table) {
         this->set_type(Int);
     else
     {
-        class_table->semant_error()<< "Expected both arguments of operator * to be of type Int"
+        class_table->semant_error(this)<< "Expected both arguments of operator * to be of type Int"
             << " but got arguments of types "<< left_type<< " and "<< right_type<< ".\n";
         this->set_type(Object);
     }
@@ -807,19 +819,19 @@ Symbol assign_class::type_check(ClassTableP class_table) {
     this->set_type(expr_type);
 
     if (name == self) {
-        class_table->semant_error() << "Cannot assign to 'self'" << ".\n";
+        class_table->semant_error(this) << "Cannot assign to 'self'" << ".\n";
         this->set_type(Object);
     }
 
     Symbol* identifier_type = symbol_table->lookup(name);
 
     if (!identifier_type) {
-        class_table->semant_error()<< "Tried to assign undeclared identifier "<< name<< ".\n";
+        class_table->semant_error(this)<< "Tried to assign undeclared identifier "<< name<< ".\n";
         this->set_type(expr_type);
     }
 
     if (!class_table->conform(expr_type, *identifier_type)) {
-        class_table->semant_error()<< "The identifier " << name << " has been declared as  "<< *identifier_type
+        class_table->semant_error(this)<< "The identifier " << name << " has been declared as  "<< *identifier_type
             << " but assigned with incompatible type "<< expr_type<< ".\n";
         this->set_type(Object);
         
@@ -829,18 +841,217 @@ Symbol assign_class::type_check(ClassTableP class_table) {
 }
 
 
+
+method_class* ClassTable::find_method(Symbol class_name, Symbol method_name) { // find method that is potentially inherited
+    if (class_name == No_type) 
+        return nullptr;
+    method_class* method = get_class_method(class_name, method_name);
+
+    if (method) return method;
+
+    Symbol parent_class_name = get_parent_class(class_name);
+    return find_method(parent_class_name, method_name);
+}
+
+
+
 Symbol dispatch_class::type_check(ClassTableP class_table) {
     Symbol expr_type = expr->type_check(class_table);
 
     if (expr_type != SELF_TYPE && !class_table->is_type_defined(expr_type)) {
 
-        class_table->semant_error()<< "Dispatch on undefined class "<< expr_type<< ".\n";
+        class_table->semant_error(this)<< "Dispatch on undefined class "<< expr_type<< ".\n";
         this->set_type(Object);
         return this->get_type();;
     }
 
+    Symbol expr_type_name = expr_type == SELF_TYPE ? class_table->curr_class->get_name() : expr_type;
+    method_class* method = class_table->find_method(expr_type_name, name);
+    if (!method) 
+    {
+        class_table->semant_error(this)<< "Dispatch to undefined method "<< name<< ".\n";
+        this->set_type(Object);
+        return this->get_type();
+    }
 
+    bool error = false;
+
+    Formals formals = method->get_formals();
+    int k1 = actual->first(), k2 = formals->first();
+    while (actual->more(k1) && formals->more(k2)) {
+        Symbol actual_type = actual->nth(k1)->type_check(class_table);
+        Symbol formal_type = formals->nth(k2)->get_type();
+        if (!class_table->conform(actual_type, formal_type)) {
+            error = true;
+            class_table->semant_error(this) << "In call of method " << name << ", type " << actual_type << " of parameter " << formals->nth(k2)->get_name() << " does not conform to declared type " << formal_type << ".\n";
+        }
+        k1 = actual->next(k1);
+        k2 = formals->next(k2);
+        if (actual->more(k1) xor formals->more(k2)) {
+            error = true;
+            class_table->semant_error(this) << "Method " << name << " called with wrong number of arguments.\n";
+        }
+    }
+
+    if (error) {
+        this->set_type(Object);
+    }
+    else {
+        Symbol dispatch_type = method->get_return_type();
+        if (dispatch_type == SELF_TYPE) 
+            dispatch_type = expr_type_name;
+        this->set_type(dispatch_type);
+    }
+
+    return this->get_type();
 }
+
+
+
+Symbol static_dispatch_class::type_check(ClassTableP class_table) {
+
+    Symbol expr_type = expr->type_check(class_table);
+
+    if (this->type_name != SELF_TYPE && !class_table->is_type_defined(this->type_name)) {
+        class_table->semant_error(this)<< "Static dispatch on undefined class " << this->type_name << ".\n";
+        this->set_type(Object);
+        return this->get_type();
+    }
+
+    if (expr_type != SELF_TYPE && !class_table->is_type_defined(expr_type)) {
+        this->set_type(Object);
+        return this->get_type();
+    }
+
+    bool error = false;
+
+    if (!class_table->conform(expr_type, this->type_name)) {
+        error = true;
+        class_table->semant_error(this) << "Expression type " << expr_type << " does not conform to declared static dispatch type " << this->type_name << ".\n";
+    }
+
+    method_class* method = class_table->find_method(type_name, name);
+    if (!method) 
+    {
+        class_table->semant_error(this)<< "Dispatch to undefined method " << name << ".\n";
+        this->set_type(Object);
+        return this->get_type();
+    }
+
+    Formals formals = method->get_formals();
+    int k1 = actual->first(), k2 = formals->first();
+    while (actual->more(k1) && formals->more(k2)) {
+        Symbol actual_type = actual->nth(k1)->type_check(class_table);
+        Symbol formal_type = formals->nth(k2)->get_type();
+        if (!class_table->conform(actual_type, formal_type)) {
+            error = true;
+            class_table->semant_error(this) << "In call of method " << name << ", type " << actual_type << " of parameter " << formals->nth(k2)->get_name() << " does not conform to declared type " << formal_type << ".\n";
+        }
+        k1 = actual->next(k1);
+        k2 = formals->next(k2);
+        if (actual->more(k1) xor formals->more(k2)) {
+            error = true;
+            class_table->semant_error(this) << "Method " << name << " called with wrong number of arguments.\n";
+        }
+    }
+
+    if (error)
+    {
+        this->set_type(Object);
+    }
+    else {
+        Symbol dispatch_type = method->get_return_type();
+        if (dispatch_type == SELF_TYPE) 
+            dispatch_type = expr_type;
+        this->set_type(dispatch_type);
+    }
+    return this->get_type();
+}
+
+
+
+Symbol method_class::type_check(ClassTableP class_table) {
+    symbol_table->enterscope();
+    std::unordered_set<Symbol> defined_formals;
+
+    for (int idx = formals->first(); formals->more(idx); idx = formals->next(idx))
+    {
+        Symbol formal_name = formals->nth(idx)->get_name();
+        Symbol formal_type = formals->nth(idx)->get_type();
+
+        if(formal_name == self)
+            class_table->semant_error(formals->nth(idx)) << "'self' cannot be the name of a method argument.\n";
+
+        else if(defined_formals.find(formal_name) != defined_formals.end())
+            class_table->semant_error(formals->nth(idx))<< "The argument "<< formal_name << " in the signature of method " << get_name()<< " has already been defined.\n";
+
+        else
+        {
+           defined_formals.insert(formal_name);
+        }
+        
+        if (!class_table->is_type_defined(formal_type))
+            class_table->semant_error(formals->nth(idx)) << "The argument " << formal_name << " in the signature of method "<< get_name()
+                << " has undefined type "<< formal_type<< " .\n";
+        else
+            symbol_table->addid(formal_name, new Symbol(formal_type));
+    }
+
+    Symbol expr_type = expr->type_check(class_table);
+    if (return_type != SELF_TYPE && !class_table->is_type_defined(return_type))
+        class_table->semant_error(this) << "Undefined return type " << return_type << " in method " << name << ".\n";
+
+    else if (!class_table->conform(expr_type, return_type)) {
+        class_table->semant_error(this) << "Inferred return type " << expr_type << " of method " << name << " does not conform to declared return type " << return_type << ".\n";
+
+    }
+   
+    symbol_table->exitscope();
+    return return_type;
+}
+
+
+
+Symbol attr_class::type_check(ClassTableP class_table) {
+    Symbol init_type = init->type_check(class_table);
+    init_type = init_type == SELF_TYPE ? class_table->curr_class->get_name() : init_type;
+    
+    if (dynamic_cast<const no_expr_class*>(init) != nullptr)
+        return this->get_type();
+
+    if (this->get_name() == self) {
+        class_table->semant_error(this) << "'self' cannot be the name of an attribute.\n";
+    }
+    
+    if (!class_table->is_type_defined(this->get_type())) {
+        class_table->semant_error(this)<< "The attribute "<< this->get_name()<< " is defined as " << this->get_type()
+            << " but the type is undefined. \n";
+    }
+
+    if (!class_table->conform(init_type, this->get_type())) {
+        class_table->semant_error(this)<< "The attribute "<< this->get_name()<< " is defined as "<< this->get_type()
+            << " and does not conform with initiliazation type "<< init_type<< ".\n";
+    }
+    return this->get_type();
+}
+
+
+
+Symbol int_const_class::type_check(ClassTableP) {
+    this->set_type(Int);
+    return Int;
+}
+
+Symbol bool_const_class::type_check(ClassTableP) {
+    this->set_type(Bool);
+    return Bool;
+}
+
+Symbol string_const_class::type_check(ClassTableP) {
+    this->set_type(Str);
+    return Str;
+}
+
 
 
 ////////////////////////////////////////////////////////////////////
@@ -866,6 +1077,11 @@ ostream& ClassTable::semant_error(Class_ c)
 ostream& ClassTable::semant_error(Symbol filename, tree_node *t)
 {
     error_stream << filename << ":" << t->get_line_number() << ": ";
+    return semant_error();
+}
+
+ostream& ClassTable::semant_error(tree_node *t) {
+    error_stream << this->curr_class->get_filename() << ":" << t->get_line_number() << ": ";
     return semant_error();
 }
 
@@ -904,8 +1120,6 @@ void program_class::semant()
     // stage 2
     classtable->install_features(classes);
     classtable->type_check(classes);
-    
-
 
     if (classtable->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;

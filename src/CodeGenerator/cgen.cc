@@ -24,6 +24,8 @@
 
 #include "cgen.h"
 #include "cgen_gc.h"
+#include <queue>
+#include <unordered_set>
 
 extern void emit_string_constant(ostream& str, char *s);
 extern int cgen_debug;
@@ -402,7 +404,7 @@ void StringEntry::code_def(ostream& s, int stringclasstag)
       << WORD;
 
 
- /***** Add dispatch information for class String ******/
+  s << STRINGNAME << DISPTAB_SUFFIX;
 
       s << endl;                                              // dispatch table
       s << WORD;  lensym->code_ref(s);  s << endl;            // string length
@@ -444,7 +446,7 @@ void IntEntry::code_def(ostream &s, int intclasstag)
       << WORD << (DEFAULT_OBJFIELDS + INT_SLOTS) << endl  // object size
       << WORD; 
 
- /***** Add dispatch information for class Int ******/
+  s << INTNAME << DISPTAB_SUFFIX;
 
       s << endl;                                          // dispatch table
       s << WORD << str << endl;                           // integer value
@@ -488,7 +490,7 @@ void BoolConst::code_def(ostream& s, int boolclasstag)
       << WORD << (DEFAULT_OBJFIELDS + BOOL_SLOTS) << endl   // object size
       << WORD;
 
- /***** Add dispatch information for class Bool ******/
+  s << BOOLNAME << DISPTAB_SUFFIX;
 
       s << endl;                                            // dispatch table
       s << WORD << val << endl;                             // value (0 or 1)
@@ -619,9 +621,14 @@ void CgenClassTable::code_constants()
 
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
 {
-   stringclasstag = 0 /* Change to your String class tag here */;
-   intclasstag =    0 /* Change to your Int class tag here */;
-   boolclasstag =   0 /* Change to your Bool class tag here */;
+   curr_classtag =  5;
+   stringclasstag = 4;
+   intclasstag =    3;
+   boolclasstag =   2;
+   ioclasstag =     1;
+   objectclasstag = 0;
+  //  objectparenttag = ;
+
 
    enterscope();
    if (cgen_debug) cout << "Building CgenClassTable" << endl;
@@ -853,7 +860,7 @@ CgenNodeP CgenClassTable::root()
 
 ///////////////////////////////////////////////////////////////////////
 //
-// CgenNode methods
+// CgenNode and CgenTable methods
 //
 ///////////////////////////////////////////////////////////////////////
 
@@ -863,9 +870,127 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
    children(NULL),
    basic_status(bstatus)
 { 
+    this->node_class = nd;
    stringtable.add_string(name->get_string());          // Add class name to string table
 }
 
+
+void CgenClassTable::inherit_features(Class_ curr_class, Class_ parent_class) {
+  class_map[curr_class->get_name()] = curr_class;
+
+  auto inherited_method_names = class_method_names[parent_class->get_name()];
+  auto inherited_methods = class_methods[parent_class->get_name()];
+  auto inherited_attr_names = class_attr_names[parent_class->get_name()];
+  auto inherited_attrs = class_attrs[parent_class->get_name()];
+  parent_map[curr_class->get_name()] = parent_class->get_name();
+
+  for (auto const &x : inherited_method_names) {
+    class_method_names[curr_class->get_name()].push_back(x);
+    class_method_defined_in[curr_class->get_name()][x] = class_method_defined_in[parent_class->get_name()][x];
+  }
+  for (auto const &x : inherited_methods) {
+    class_methods[curr_class->get_name()][x.first] = x.second;
+  }
+  for (auto const &x : inherited_attr_names) {
+    class_attr_names[curr_class->get_name()].push_back(x);
+  }
+  for (auto const &x : inherited_attrs) {
+    class_attrs[curr_class->get_name()][x.first] = x.second;
+  }
+}
+
+void CgenClassTable::install_features(Class_ curr_class) {
+  
+  Symbol class_name = curr_class->get_name();
+  Features class_features = curr_class->get_features();
+
+  for (int i = class_features->first(); class_features->more(i); i = class_features->next(i)) 
+  {
+      Feature feature = class_features->nth(i);
+
+      if (feature->is_method()) {
+        method_class* method = static_cast<method_class*>(feature);
+        Symbol method_name = method->get_name();
+        
+        this->class_method_names[class_name].push_back(method_name);
+        this->class_methods[class_name][method_name] = method;
+        this->class_method_defined_in[class_name][method_name] = class_name;
+      }
+      else {
+        attr_class* attr = static_cast<attr_class*>(feature);
+        Symbol attr_name = attr->get_name();
+
+        this->class_attrs[class_name][attr_name] = attr;
+        this->class_attr_names[class_name].push_back(attr_name);
+        this->class_directly_owned_attrs[class_name].insert(attr_name);
+      }
+  }
+}
+
+
+
+void CgenClassTable::traverse_inheritance_tree() {
+  std::queue<CgenNodeP> queue;
+  queue.push(root());
+  classtag_map[Object] = get_classtag(Object);
+
+  while (!queue.empty()) {
+    CgenNodeP class_nd = queue.front();
+    queue.pop();
+
+    Class_ curr_class = class_nd->get_class_def();
+    this->class_map[curr_class->get_name()] = curr_class;
+
+    if(class_nd->get_parentnd()) {
+      Class_ parent_class = class_nd->get_parentnd()->get_class_def();
+      this->inherit_features(curr_class, parent_class);
+    }
+
+    this->install_features(curr_class);
+
+    List<CgenNode> *child_nodes = class_nd->get_children();
+    while (child_nodes) {
+      CgenNodeP child_nd = child_nodes->hd();
+      Class_ child_class = child_nd->get_class_def();
+      Symbol child_name = child_class->get_name();
+
+      classtag_map[child_name] = get_classtag(child_name);
+      queue.push(child_nd);
+      child_nodes = child_nodes->tl();
+    }
+  }
+}
+
+
+int CgenClassTable::get_classtag(Symbol type) {
+  if (type == Object)
+    return objectclasstag;
+  else if (type == IO)
+    return ioclasstag;
+  else if (type == Bool)
+    return boolclasstag;
+  else if (type == Int)
+    return intclasstag;
+  else if (type == Str)
+    return stringclasstag;
+  else
+    return curr_classtag++;
+}
+
+
+///////////////////////////////////////////////////////////////////////
+//
+// Prototype object construction
+//
+///////////////////////////////////////////////////////////////////////
+
+
+void CgenClassTable::construct_protObjs() {
+  for (List<CgenNode>* node = this->nds; node; node = node->tl()) {
+    Class_ curr_class = node->hd()->get_class_def();
+    Symbol class_name = curr_class->get_name();
+  }
+}
 
 //******************************************************************
 //

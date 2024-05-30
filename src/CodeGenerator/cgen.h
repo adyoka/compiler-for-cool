@@ -3,7 +3,9 @@
 #include "emit.h"
 #include "cool-tree.h"
 #include "symtab.h"
-
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 enum Basicness     {Basic, NotBasic};
 #define TRUE 1
 #define FALSE 0
@@ -21,6 +23,22 @@ private:
    int stringclasstag;
    int intclasstag;
    int boolclasstag;
+   int curr_classtag;
+   int ioclasstag;
+   int objectclasstag;
+   int objectparenttag;
+
+   std::unordered_map<Symbol, int> classtag_map;
+   std::unordered_map<Symbol, Class_> class_map;
+   std::unordered_map<Symbol, Symbol> parent_map;
+
+   std::unordered_map<Symbol, std::vector<Symbol>>                         class_method_names;
+   std::unordered_map<Symbol, std::unordered_map<Symbol, method_class*>>   class_methods;
+   std::unordered_map<Symbol, std::vector<Symbol>>                         class_attr_names;
+   std::unordered_map<Symbol, std::unordered_map<Symbol, attr_class*>>     class_attrs;
+   std::unordered_map<Symbol, std::unordered_set<Symbol>>                  class_directly_owned_attrs;
+   std::unordered_map<Symbol, std::unordered_map<Symbol, Symbol>>         class_method_defined_in;
+   
 
 
 // The following methods emit code for
@@ -42,6 +60,12 @@ private:
    void install_classes(Classes cs);
    void build_inheritance_tree();
    void set_relations(CgenNodeP nd);
+   void traverse_inheritance_tree();
+   void inherit_features(Class_, Class_);
+   void install_features(Class_);
+
+   int get_classtag(Symbol);
+   void construct_protObjs();
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
@@ -55,6 +79,7 @@ private:
    List<CgenNode> *children;                  // Children of class
    Basicness basic_status;                    // `Basic' if class is basic
                                               // `NotBasic' otherwise
+   Class_ node_class;
 
 public:
    CgenNode(Class_ c,
@@ -66,6 +91,7 @@ public:
    void set_parentnd(CgenNodeP p);
    CgenNodeP get_parentnd() { return parentnd; }
    int basic() { return (basic_status == Basic); }
+   Class_ get_class_def() { return node_class; }
 };
 
 class BoolConst 

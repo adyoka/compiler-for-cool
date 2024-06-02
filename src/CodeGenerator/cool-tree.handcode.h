@@ -92,7 +92,8 @@ Symbol get_return_type() { return return_type;	}
 bool is_method() { return false; }              \
 bool is_attr() { return true; }                 \
 Symbol get_name() { return name; }              \
-Symbol get_type() {	return type_decl; }				
+Symbol get_type() {	return type_decl; }			\
+Expression get_init_expr() { return init; }		
 
 
 #define Formal_EXTRAS                              \
@@ -121,7 +122,7 @@ void dump_type(ostream&, int);               \
 Expression_class() { type = (Symbol) NULL; }
 
 #define Expression_SHARED_EXTRAS           \
-void code(ostream&); 			   \
+void code(ostream&, CgenClassTableP); 			   \
 void dump_with_types(ostream&,int); 
 
 

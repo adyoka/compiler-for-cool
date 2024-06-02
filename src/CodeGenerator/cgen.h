@@ -4,6 +4,7 @@
 #include "cool-tree.h"
 #include "symtab.h"
 #include <unordered_map>
+#include <map>
 #include <unordered_set>
 #include <vector>
 enum Basicness     {Basic, NotBasic};
@@ -31,16 +32,17 @@ private:
    std::unordered_map<Symbol, int> classtag_map;
    std::unordered_map<Symbol, Class_> class_map;
    std::unordered_map<Symbol, Symbol> parent_map;
+   std::map<int, Symbol> protObjs;
 
    std::unordered_map<Symbol, std::vector<Symbol>>                         class_method_names;
    std::unordered_map<Symbol, std::unordered_map<Symbol, method_class*>>   class_methods;
    std::unordered_map<Symbol, std::vector<Symbol>>                         class_attr_names;
    std::unordered_map<Symbol, std::unordered_map<Symbol, attr_class*>>     class_attrs;
    std::unordered_map<Symbol, std::unordered_set<Symbol>>                  class_directly_owned_attrs;
-   std::unordered_map<Symbol, std::unordered_map<Symbol, Symbol>>         class_method_defined_in;
+   std::unordered_map<Symbol, std::unordered_map<Symbol, Symbol>>          class_method_defined_in;
    
-
-
+   std::unordered_map<Symbol, std::unordered_map<Symbol, int>>             dispatch_method_offsets;   // class_name -> method_name -> offset
+   std::unordered_map<Symbol, std::unordered_map<Symbol, int>>             class_attr_offsets;        // class_name -> attr_name -> offset
 // The following methods emit code for
 // constants and global declarations.
 
@@ -65,7 +67,13 @@ private:
    void install_features(Class_);
 
    int get_classtag(Symbol);
-   void construct_protObjs();
+   void emit_nameTab();
+   void emit_objTab();
+   void emit_parentTab();
+   void emit_protObjs();
+   void emit_dispatch_table();
+   void emit_default_val(Symbol);
+   void emit_initializers();
 public:
    CgenClassTable(Classes, ostream& str);
    void code();

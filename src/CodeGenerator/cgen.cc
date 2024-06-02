@@ -357,6 +357,37 @@ static void emit_gc_check(char *source, ostream &s)
 }
 
 
+static void emit_spill_activation_record_registers (ostream&str) {
+  emit_addiu(SP, SP, -12, str);
+  emit_store(FP, 3, SP, str);
+  emit_store(SELF, 2, SP, str);
+  emit_store(RA, 1, SP, str);
+}
+
+static void emit_restore_activation_record_registers(ostream&str) {
+  emit_load(RA, 1, SP, str);
+  emit_load(SELF, 2, SP, str);
+  emit_load(FP, 3, SP, str);
+  emit_addiu(SP, SP, 12, str);
+}
+
+static void emit_setup_frame_pointer (ostream&str) {
+  emit_addiu(FP, SP, 4, str);
+}
+
+static void emit_setup_self_pointer (ostream&str) {
+  emit_move(SELF, ACC, str);
+}
+
+static void emit_jump_to_label(int label, ostream &s) {
+  s << "\tj\t";
+  emit_label_ref(label, s);
+  s << endl;
+}
+
+static void emit_not(char* dest, char* src, ostream &s) {
+  s << "\tnot\t" << dest << "\t" << src << endl;
+}
 ///////////////////////////////////////////////////////////////////////////////
 //
 // coding strings, ints, and booleans
@@ -871,31 +902,36 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
    basic_status(bstatus)
 { 
     this->node_class = nd;
-   stringtable.add_string(name->get_string());          // Add class name to string table
+    stringtable.add_string(name->get_string());          // Add class name to string table
 }
 
 
 void CgenClassTable::inherit_features(Class_ curr_class, Class_ parent_class) {
   class_map[curr_class->get_name()] = curr_class;
 
-  auto inherited_method_names = class_method_names[parent_class->get_name()];
+  std::vector<Symbol> inherited_method_names = class_method_names[parent_class->get_name()];
   auto inherited_methods = class_methods[parent_class->get_name()];
-  auto inherited_attr_names = class_attr_names[parent_class->get_name()];
+  std::vector<Symbol> inherited_attr_names = class_attr_names[parent_class->get_name()];
   auto inherited_attrs = class_attrs[parent_class->get_name()];
   parent_map[curr_class->get_name()] = parent_class->get_name();
 
+  int method_offset = 0;
   for (auto const &x : inherited_method_names) {
-    class_method_names[curr_class->get_name()].push_back(x);
-    class_method_defined_in[curr_class->get_name()][x] = class_method_defined_in[parent_class->get_name()][x];
+    this->class_method_names[curr_class->get_name()].push_back(x);
+    this->dispatch_method_offsets[curr_class->get_name()][x] = method_offset++;
+    this->class_method_defined_in[curr_class->get_name()][x] = class_method_defined_in[parent_class->get_name()][x];
   }
   for (auto const &x : inherited_methods) {
-    class_methods[curr_class->get_name()][x.first] = x.second;
+    this->class_methods[curr_class->get_name()][x.first] = x.second;
   }
+
+  int attr_offset = DEFAULT_OBJFIELDS;
   for (auto const &x : inherited_attr_names) {
-    class_attr_names[curr_class->get_name()].push_back(x);
+    this->class_attr_names[curr_class->get_name()].push_back(x);
+    this->class_attr_offsets[curr_class->get_name()][x] = attr_offset++;
   }
   for (auto const &x : inherited_attrs) {
-    class_attrs[curr_class->get_name()][x.first] = x.second;
+    this->class_attrs[curr_class->get_name()][x.first] = x.second;
   }
 }
 
@@ -903,6 +939,9 @@ void CgenClassTable::install_features(Class_ curr_class) {
   
   Symbol class_name = curr_class->get_name();
   Features class_features = curr_class->get_features();
+
+  int method_offset = this->dispatch_method_offsets[class_name].size();
+  int attr_offset = this->class_attr_offsets[class_name].size() > 0 ? this->class_attr_offsets[class_name].size() : DEFAULT_OBJFIELDS;
 
   for (int i = class_features->first(); class_features->more(i); i = class_features->next(i)) 
   {
@@ -915,6 +954,7 @@ void CgenClassTable::install_features(Class_ curr_class) {
         this->class_method_names[class_name].push_back(method_name);
         this->class_methods[class_name][method_name] = method;
         this->class_method_defined_in[class_name][method_name] = class_name;
+        this->dispatch_method_offsets[class_name][method_name] = method_offset++;
       }
       else {
         attr_class* attr = static_cast<attr_class*>(feature);
@@ -923,6 +963,7 @@ void CgenClassTable::install_features(Class_ curr_class) {
         this->class_attrs[class_name][attr_name] = attr;
         this->class_attr_names[class_name].push_back(attr_name);
         this->class_directly_owned_attrs[class_name].insert(attr_name);
+        this->class_attr_offsets[class_name][attr_name] = attr_offset++;
       }
   }
 }
@@ -933,6 +974,7 @@ void CgenClassTable::traverse_inheritance_tree() {
   std::queue<CgenNodeP> queue;
   queue.push(root());
   classtag_map[Object] = get_classtag(Object);
+  protObjs[objectclasstag] = Object;
 
   while (!queue.empty()) {
     CgenNodeP class_nd = queue.front();
@@ -954,7 +996,10 @@ void CgenClassTable::traverse_inheritance_tree() {
       Class_ child_class = child_nd->get_class_def();
       Symbol child_name = child_class->get_name();
 
-      classtag_map[child_name] = get_classtag(child_name);
+      int tag = get_classtag(child_name);
+      classtag_map[child_name] = tag;
+      this->protObjs[tag] = child_name;
+
       queue.push(child_nd);
       child_nodes = child_nodes->tl();
     }
@@ -984,13 +1029,152 @@ int CgenClassTable::get_classtag(Symbol type) {
 //
 ///////////////////////////////////////////////////////////////////////
 
+// this->emit_nameTab();
+//   this->emit_objTab();
+//   this->emit_parentTab();
+//   this->emit_dispatch_tables();
+//   this->emit_protObjs();
 
-void CgenClassTable::construct_protObjs() {
-  for (List<CgenNode>* node = this->nds; node; node = node->tl()) {
-    Class_ curr_class = node->hd()->get_class_def();
-    Symbol class_name = curr_class->get_name();
+//   if (cgen_debug) cout << "coding global text" << endl;
+//   code_global_text();
+
+//   this->emit_initialisers();
+//   this->emit_class_methods();
+
+void CgenClassTable::emit_nameTab() {
+  str << CLASSNAMETAB << ":" << endl;
+  for (auto const &class_obj : this->protObjs) {
+    str << WORD;
+    stringtable.lookup_string(class_obj.second->get_string())->code_ref(str);
+    str << endl;
   }
 }
+
+void CgenClassTable::emit_objTab() {
+  str << CLASSOBJTAB << ":" << endl;
+  for (auto const &class_obj : this->protObjs) {
+    Symbol class_name = class_obj.second;
+    str << WORD << class_name << PROTOBJ_SUFFIX << endl;
+    str << WORD << class_name << "_init" << endl;
+  }
+}
+
+
+void CgenClassTable::emit_dispatch_table() {
+  for (auto const &classObj : this->protObjs) {
+    Symbol class_name = classObj.second;
+    str << classObj.second << DISPTAB_SUFFIX << ":" << endl;
+    // Class_ curr_class = class_map[class_name];
+    for (auto const &method_name : class_method_names[class_name]) {
+      str << WORD << this->class_method_defined_in[class_name][method_name]<< "." << method << endl;
+    }
+  }
+}
+
+
+void CgenClassTable::emit_default_val(Symbol type) {
+  if (type == Int)
+    inttable.lookup_string("0")->code_ref(str);
+  else if (type == Bool)
+    falsebool.code_ref(str);
+  else if (type == Str)
+    stringtable.lookup_string("")->code_ref(str);
+  else
+    str << "0";
+}
+
+void CgenClassTable::emit_protObjs() {
+  for (auto const &prot_obj : this->protObjs) {
+    Symbol class_name = prot_obj.second;
+    str << WORD << -1 << endl;
+    str << class_name << PROTOBJ_SUFFIX << ":" << endl;
+    str << WORD << prot_obj.first << endl;
+    int sz = DEFAULT_OBJFIELDS + class_attr_names[class_name].size();
+    str << WORD << sz << endl;
+    str << WORD << class_name<< DISPTAB_SUFFIX << endl;
+
+    for (auto const &attr_name : class_attr_names[class_name]) {       
+      str << WORD;
+      emit_default_val(class_attrs[class_name][attr_name]->get_type());
+      str << endl;
+    }
+  }
+}
+
+
+void CgenClassTable::emit_parentTab() {
+  str << CLASSPARENTTAB << LABEL;
+  for (auto const &type : this->protObjs) {
+    if (type.second == Object) {
+      str << WORD << objectparenttag << endl;
+    }
+    else {
+      str << WORD << this->classtag_map[parent_map[type.second]] << endl;
+    }
+  }
+}
+
+
+void CgenClassTable::emit_initialiser(cgen_class_definition cgen_definition) {
+  str << cgen_definition.name << CLASSINIT_SUFFIX << LABEL;
+
+  emit_spill_activation_record_registers(str);
+  emit_setup_frame_pointer(str);
+  emit_setup_self_pointer(str);
+
+  if (cgen_definition.name != Object) {
+    emit_jal_without_address(str);
+    str << inheritance_parent[cgen_definition.name] << CLASSINIT_SUFFIX << endl;
+  }
+
+  cgen_context context;
+  context.self_name = cgen_definition.name;
+  context.class_attr_offset = cgen_definition.attr_offset;
+  context.self_class_definition = class_definitions[cgen_definition.name];
+  context.dispatch_offsets_of_class_methods = dispatch_offsets_of_class_methods;
+  context.classtag_of = classtag_of;
+
+  for (auto const& attr_name : cgen_definition.attrs) {
+    Expression attr_init_expr = cgen_definition.attr_definitions[attr_name]->get_init_expr();
+    bool has_init_expr = dynamic_cast<no_expr_class*>(attr_init_expr) == nullptr;
+    if (has_init_expr && cgen_definition.is_directly_owned(attr_name)) {
+      attr_init_expr->code(str, context);
+      emit_store(ACC, cgen_definition.attr_offset[attr_name], SELF, str);
+    }
+  }
+
+  emit_move(ACC, SELF, str);
+  emit_restore_activation_record_registers(str);
+  emit_return(str);
+}
+
+void CgenClassTable::emit_initializers() {
+  for (auto const &obj_name : this->protObjs) {
+    Symbol class_name = obj_name.second;
+    str << class_name<< CLASSINIT_SUFFIX << LABEL;
+
+    emit_spill_activation_record_registers(str);
+    emit_setup_frame_pointer(str);
+    emit_setup_self_pointer(str);
+
+    if (class_name!= Object) {
+      str << JAL << parent_map[class_name] << CLASSINIT_SUFFIX << endl;
+    }
+
+    for (auto const& attr_name : this->class_attr_names[class_name]) {
+      Expression attr_init_expr = this->class_attrs[class_name][attr_name]->get_init_expr();
+      bool has_init_expr = dynamic_cast<no_expr_class*>(attr_init_expr) == nullptr;
+      if (has_init_expr && 
+      class_directly_owned_attrs[class_name].find(attr_name) != class_directly_owned_attrs[class_name].end() ) {
+        attr_init_expr->code(str, this);
+        
+    }
+  }
+  }
+    
+}
+
+
 
 //******************************************************************
 //
@@ -1002,10 +1186,10 @@ void CgenClassTable::construct_protObjs() {
 //
 //*****************************************************************
 
-void assign_class::code(ostream &s) {
+void assign_class::code(ostream &s, CgenClassTableP cgen_table) {
 }
 
-void static_dispatch_class::code(ostream &s) {
+void static_dispatch_class::code(ostream &s, CgenClassTableP cgen_table) {
 }
 
 void dispatch_class::code(ostream &s) {

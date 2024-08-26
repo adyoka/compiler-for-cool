@@ -1,3 +1,3 @@
-handle_flags.o handle_flags.d : handle_flags.cc ../../include/PA5/copyright.h \
- ../../include/PA5/cool-io.h ../../include/PA5/copyright.h \
- ../../include/PA5/cgen_gc.h
+handle_flags.o handle_flags.d : handle_flags.cc ../../include/copyright.h \
+ ../../include/cool-io.h ../../include/copyright.h \
+ ../../include/cgen_gc.h

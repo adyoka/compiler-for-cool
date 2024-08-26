@@ -19,7 +19,7 @@ OBJS= ${CFIL:.cc=.o}
 OUTPUT= good.output bad.output
 
 
-CPPINCLUDE= -I. -I${CLASSDIR}/include/PA${ASSN} -I${CLASSDIR}/src/CodeGenerator
+CPPINCLUDE= -I. -I${CLASSDIR}/include -I${CLASSDIR}/src/CodeGenerator
 
 
 FFLAGS = -d8 -ocool-lex.cc

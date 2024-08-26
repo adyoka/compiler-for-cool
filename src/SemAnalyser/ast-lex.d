@@ -1,5 +1,5 @@
-ast-lex.o ast-lex.d : ast-lex.cc ../../include/PA4/ast-parse.h \
-  ../../include/PA4/copyright.h ../../include/PA4/cool-io.h \
-  ../../include/PA4/tree.h ../../include/PA4/stringtab.h \
-  ../../include/PA4/list.h ../../include/PA4/stringtab.h \
-  ../../include/PA4/utilities.h
+ast-lex.o ast-lex.d : ast-lex.cc ../../include/ast-parse.h \
+  ../../include/copyright.h ../../include/cool-io.h \
+  ../../include/tree.h ../../include/stringtab.h \
+  ../../include/list.h ../../include/stringtab.h \
+  ../../include/utilities.h

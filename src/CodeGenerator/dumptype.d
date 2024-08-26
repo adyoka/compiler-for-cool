@@ -1,6 +1,6 @@
-dumptype.o dumptype.d : dumptype.cc ../../include/PA5/copyright.h \
- ../../include/PA5/cool.h ../../include/PA5/copyright.h \
- ../../include/PA5/cool-io.h ../../include/PA5/tree.h \
- ../../include/PA5/stringtab.h ../../include/PA5/list.h cool-tree.h \
- cool-tree.handcode.h ../../include/PA5/stringtab.h \
- ../../include/PA5/utilities.h
+dumptype.o dumptype.d : dumptype.cc ../../include/copyright.h \
+ ../../include/cool.h ../../include/copyright.h \
+ ../../include/cool-io.h ../../include/tree.h \
+ ../../include/stringtab.h ../../include/list.h cool-tree.h \
+ cool-tree.handcode.h ../../include/stringtab.h \
+ ../../include/utilities.h

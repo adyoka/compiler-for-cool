@@ -389,6 +389,18 @@ static void emit_jump_to_label(int label, ostream &s) {
 static void emit_not(char* dest, char* src, ostream &s) {
   s << "\tnot\t" << dest << "\t" << src << endl;
 }
+
+
+static void emit_pop(char *reg, ostream& str)
+{
+  emit_addiu(SP,SP,4,str);
+  emit_load(reg,0,SP,str);
+}
+
+static void emit_pop_without_load(ostream& str)
+{
+  emit_addiu(SP,SP,4,str);
+}
 ///////////////////////////////////////////////////////////////////////////////
 //
 // coding strings, ints, and booleans
@@ -1190,8 +1202,8 @@ void CgenClassTable::emit_methods() {
   }
 
 
-    if(!cgen_class_definition_of[cgen_definition].is_primitive_type)
-      emit_methods(cgen_class_definition_of[cgen_definition]);
+    // if(!cgen_class_definition_of[cgen_definition].is_primitive_type)
+    //   emit_methods(cgen_class_definition_of[cgen_definition]);
 }
 
 

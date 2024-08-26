@@ -1,0 +1,2 @@
+#!/bin/csh -f
+./src/lexer/out/lexer $* | ./src/Parser/out/parser $* | ./src/SemAnalyser/semant $* | ./src/CodeGenerator/cgen $*

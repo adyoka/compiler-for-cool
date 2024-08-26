@@ -23,7 +23,8 @@ class Main inherits IO {
 ```
 
 Resources: [COOL Manual](http://theory.stanford.edu/~aiken/software/cool/cool-manual.pdf)
-This projects follow the structure of Stanford [course]((https://online.stanford.edu/courses/soe-ycscs1-compilers).
+
+This projects follow the structure of Stanford [course](https://online.stanford.edu/courses/soe-ycscs1-compilers).
 
 ### Project Structure
  * [Lexer](./src/Lexer/) - implements the lexical analysis and tokenizes the input program

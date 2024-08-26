@@ -8,6 +8,8 @@
 #include "tree.h"
 #include "cool.h"
 #include "stringtab.h"
+#include "cgen.h"
+
 #define yylineno curr_lineno;
 extern int yylineno;
 
@@ -84,7 +86,8 @@ bool is_method() { return true; }				\
 bool is_attr() { return false; }				\
 Symbol get_name() { return name; }				\
 Formals get_formals() { return formals; }		\
-Symbol get_return_type() { return return_type;	}	
+Symbol get_return_type() { return return_type;	}	 \
+Expression get_expr() { return expr; }
 
 
 
@@ -116,13 +119,13 @@ void dump_with_types(ostream& ,int);
 Symbol type;                                 \
 Symbol get_type() { return type; }           \
 Expression set_type(Symbol s) { type = s; return this; } \
-virtual void code(ostream&) = 0; \
+virtual void code(ostream&, CgenClassTableP, CgenContextP) = 0; \
 virtual void dump_with_types(ostream&,int) = 0;  \
 void dump_type(ostream&, int);               \
 Expression_class() { type = (Symbol) NULL; }
 
 #define Expression_SHARED_EXTRAS           \
-void code(ostream&, CgenClassTableP); 			   \
+void code(ostream&, CgenClassTableP, CgenContextP); 	 		\
 void dump_with_types(ostream&,int); 
 
 

@@ -17,6 +17,9 @@ typedef CgenClassTable *CgenClassTableP;
 class CgenNode;
 typedef CgenNode *CgenNodeP;
 
+class CgenContext;
+typedef CgenContext *CgenContextP;
+
 class CgenClassTable : public SymbolTable<Symbol,CgenNode> {
 private:
    List<CgenNode> *nds;
@@ -74,6 +77,7 @@ private:
    void emit_dispatch_table();
    void emit_default_val(Symbol);
    void emit_initializers();
+   void emit_methods();
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
@@ -110,5 +114,23 @@ class BoolConst
   BoolConst(int);
   void code_def(ostream&, int boolclasstag);
   void code_ref(ostream&) const;
+};
+
+class CgenContext {
+public:
+   Class_                                                          self_class;
+	Symbol                                                          self_class_name;
+	Symbol                                                          method_name;
+	std::vector<Symbol>                                             scope;
+
+   int get_scope_identifier_offset(Symbol identifier) {
+		if (scope.size() == 0)
+			return -1;
+		int idx = scope.size() - 1;
+		while(idx >= 0 && scope[idx] != identifier)
+			idx--;
+		int scope_offset = scope.size() - 1 - idx;
+		return (scope[idx] == identifier ? scope_offset : -1);
+	}
 };
 

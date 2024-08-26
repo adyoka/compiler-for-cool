@@ -24,6 +24,7 @@
 
 #include "cgen.h"
 #include "cgen_gc.h"
+#include "cgen-context.h"
 #include <queue>
 #include <unordered_set>
 
@@ -671,6 +672,18 @@ CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
    exitscope();
 }
 
+
+CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
+   class__class((const class__class &) *nd),
+   parentnd(NULL),
+   children(NULL),
+   basic_status(bstatus)
+{ 
+    this->node_class = nd;
+    stringtable.add_string(name->get_string());          // Add class name to string table
+}
+
+
 void CgenClassTable::install_basic_classes()
 {
 
@@ -688,7 +701,7 @@ void CgenClassTable::install_basic_classes()
 //
   addid(No_class,
 	new CgenNode(class_(No_class,No_class,nil_Features(),filename),
-			    Basic,this));
+			    Basic,(CgenClassTableP)this));
   addid(SELF_TYPE,
 	new CgenNode(class_(SELF_TYPE,No_class,nil_Features(),filename),
 			    Basic,this));
@@ -895,15 +908,6 @@ CgenNodeP CgenClassTable::root()
 //
 ///////////////////////////////////////////////////////////////////////
 
-CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
-   class__class((const class__class &) *nd),
-   parentnd(NULL),
-   children(NULL),
-   basic_status(bstatus)
-{ 
-    this->node_class = nd;
-    stringtable.add_string(name->get_string());          // Add class name to string table
-}
 
 
 void CgenClassTable::inherit_features(Class_ curr_class, Class_ parent_class) {
@@ -1022,6 +1026,15 @@ int CgenClassTable::get_classtag(Symbol type) {
     return curr_classtag++;
 }
 
+bool is_primitive(Symbol type) {
+  if (type == Object
+      || type == IO
+      || type == Bool
+      || type == Int
+      || type == Str
+  ) return true;
+  else return false;
+}
 
 ///////////////////////////////////////////////////////////////////////
 //
@@ -1066,7 +1079,7 @@ void CgenClassTable::emit_dispatch_table() {
     str << classObj.second << DISPTAB_SUFFIX << ":" << endl;
     // Class_ curr_class = class_map[class_name];
     for (auto const &method_name : class_method_names[class_name]) {
-      str << WORD << this->class_method_defined_in[class_name][method_name]<< "." << method << endl;
+      str << WORD << this->class_method_defined_in[class_name][method_name]<< "." << method_name << endl;
     }
   }
 }
@@ -1088,7 +1101,7 @@ void CgenClassTable::emit_protObjs() {
     Symbol class_name = prot_obj.second;
     str << WORD << -1 << endl;
     str << class_name << PROTOBJ_SUFFIX << ":" << endl;
-    str << WORD << prot_obj.first << endl;
+    str << WORD << prot_obj.first << endl; // class tag
     int sz = DEFAULT_OBJFIELDS + class_attr_names[class_name].size();
     str << WORD << sz << endl;
     str << WORD << class_name<< DISPTAB_SUFFIX << endl;
@@ -1115,39 +1128,6 @@ void CgenClassTable::emit_parentTab() {
 }
 
 
-void CgenClassTable::emit_initialiser(cgen_class_definition cgen_definition) {
-  str << cgen_definition.name << CLASSINIT_SUFFIX << LABEL;
-
-  emit_spill_activation_record_registers(str);
-  emit_setup_frame_pointer(str);
-  emit_setup_self_pointer(str);
-
-  if (cgen_definition.name != Object) {
-    emit_jal_without_address(str);
-    str << inheritance_parent[cgen_definition.name] << CLASSINIT_SUFFIX << endl;
-  }
-
-  cgen_context context;
-  context.self_name = cgen_definition.name;
-  context.class_attr_offset = cgen_definition.attr_offset;
-  context.self_class_definition = class_definitions[cgen_definition.name];
-  context.dispatch_offsets_of_class_methods = dispatch_offsets_of_class_methods;
-  context.classtag_of = classtag_of;
-
-  for (auto const& attr_name : cgen_definition.attrs) {
-    Expression attr_init_expr = cgen_definition.attr_definitions[attr_name]->get_init_expr();
-    bool has_init_expr = dynamic_cast<no_expr_class*>(attr_init_expr) == nullptr;
-    if (has_init_expr && cgen_definition.is_directly_owned(attr_name)) {
-      attr_init_expr->code(str, context);
-      emit_store(ACC, cgen_definition.attr_offset[attr_name], SELF, str);
-    }
-  }
-
-  emit_move(ACC, SELF, str);
-  emit_restore_activation_record_registers(str);
-  emit_return(str);
-}
-
 void CgenClassTable::emit_initializers() {
   for (auto const &obj_name : this->protObjs) {
     Symbol class_name = obj_name.second;
@@ -1161,83 +1141,116 @@ void CgenClassTable::emit_initializers() {
       str << JAL << parent_map[class_name] << CLASSINIT_SUFFIX << endl;
     }
 
+    CgenContextP context;
+    context->self_class_name = class_name;
+    context->self_class = class_map[class_name];
+    
     for (auto const& attr_name : this->class_attr_names[class_name]) {
       Expression attr_init_expr = this->class_attrs[class_name][attr_name]->get_init_expr();
       bool has_init_expr = dynamic_cast<no_expr_class*>(attr_init_expr) == nullptr;
       if (has_init_expr && 
       class_directly_owned_attrs[class_name].find(attr_name) != class_directly_owned_attrs[class_name].end() ) {
-        attr_init_expr->code(str, this);
-        
+        attr_init_expr->code(str, (CgenClassTableP)this, context);
+        emit_store(ACC, class_attr_offsets[class_name][attr_name], SELF, str);
+      }
+    }
+    emit_move(ACC, SELF, str);
+    emit_restore_activation_record_registers(str);
+    emit_return(str);
+  }
+}
+
+
+void CgenClassTable::emit_methods() {
+  for (auto const &class_obj : this->protObjs) {
+    Symbol class_name = class_obj.second;
+    if (!is_primitive(class_name)) {
+      for (auto const& methodEntry : class_methods[class_name]) {
+        Symbol method_name = methodEntry.first;
+        if (class_method_defined_in[class_name][method_name] = class_name) {
+          
+          emit_method_ref(class_name, method_name, str);
+          str << LABEL;
+          emit_spill_activation_record_registers(str);
+          emit_setup_frame_pointer(str);
+          emit_setup_self_pointer(str);
+
+          methodEntry.second->get_expr()->code(str, this, class_name);
+
+          emit_restore_activation_record_registers(str);
+
+          for (size_t i = 0; i < ctx.method_attr_offset.size(); i++) {
+            emit_pop_without_load(str);
+            ctx.pop_scope_identifier();
+          }
+          emit_return(str);  
+        }
+      }
     }
   }
-  }
-    
+
+
+    if(!cgen_class_definition_of[cgen_definition].is_primitive_type)
+      emit_methods(cgen_class_definition_of[cgen_definition]);
 }
 
 
 
-//******************************************************************
-//
-//   Fill in the following methods to produce code for the
-//   appropriate expression.  You may add or remove parameters
-//   as you wish, but if you do, remember to change the parameters
-//   of the declarations in `cool-tree.h'  Sample code for
-//   constant integers, strings, and booleans are provided.
-//
-//*****************************************************************
 
-void assign_class::code(ostream &s, CgenClassTableP cgen_table) {
+/*
+
+void assign_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void static_dispatch_class::code(ostream &s, CgenClassTableP cgen_table) {
+void static_dispatch_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void dispatch_class::code(ostream &s) {
+void dispatch_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void cond_class::code(ostream &s) {
+void cond_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void loop_class::code(ostream &s) {
+void loop_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void typcase_class::code(ostream &s) {
+void typcase_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void block_class::code(ostream &s) {
+void block_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void let_class::code(ostream &s) {
+void let_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void plus_class::code(ostream &s) {
+void plus_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void sub_class::code(ostream &s) {
+void sub_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void mul_class::code(ostream &s) {
+void mul_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void divide_class::code(ostream &s) {
+void divide_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void neg_class::code(ostream &s) {
+void neg_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void lt_class::code(ostream &s) {
+void lt_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void eq_class::code(ostream &s) {
+void eq_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void leq_class::code(ostream &s) {
+void leq_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void comp_class::code(ostream &s) {
+void comp_class::code(ostream &s, CgenClassTableP cgen_table, CgenContextP context) {
 }
 
-void int_const_class::code(ostream& s)  
+void int_const_class::code(ostream& s, CgenClassTableP cgen_table, CgenContextP context)  
 {
   //
   // Need to be sure we have an IntEntry *, not an arbitrary Symbol
@@ -1245,26 +1258,27 @@ void int_const_class::code(ostream& s)
   emit_load_int(ACC,inttable.lookup_string(token->get_string()),s);
 }
 
-void string_const_class::code(ostream& s)
+void string_const_class::code(ostream& s, CgenClassTableP cgen_table, Symbol class_name)
 {
   emit_load_string(ACC,stringtable.lookup_string(token->get_string()),s);
 }
 
-void bool_const_class::code(ostream& s)
+void bool_const_class::code(ostream& s, CgenClassTableP cgen_table, Symbol class_name)
 {
   emit_load_bool(ACC, BoolConst(val), s);
 }
 
-void new__class::code(ostream &s) {
+void new__class::code(ostream &s, CgenClassTableP cgen_table, Symbol class_name) {
 }
 
-void isvoid_class::code(ostream &s) {
+void isvoid_class::code(ostream &s, CgenClassTableP cgen_table, Symbol class_name ) {
 }
 
-void no_expr_class::code(ostream &s) {
+void no_expr_class::code(ostream &s, CgenClassTableP cgen_table, Symbol class_name) {
 }
 
-void object_class::code(ostream &s) {
+void object_class::code(ostream &s, CgenClassTableP cgen_table, Symbol class_name) {
 }
 
 
+*/
